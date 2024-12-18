@@ -82,6 +82,7 @@ def parseArgs():
     args.add_argument('-t', '--https-ports', help='List of comma-separated ports to scan as HTTPS', default="443,8443")
     args.add_argument('-w', '--wordlist', default='/home/kali/dsmallest.txt', help='Wordlist for ffuf')
     args.add_argument('-o', '--output', default='output.txt', help='Output file. Default is output.txt')
+    args.add_argument('-f', '--ffuf-args', help='Args to pass to ffuf for URL scan. Replace "-" with "+"')
     return args.parse_args()
 
 
@@ -104,10 +105,11 @@ def parseNmapXml():
 
 def main():
     args = parseArgs()
+    if args.ffuf_args: args.ffuf_args = args.ffuf_args.replace('+','-')
 
     # Step 1: nmap
     if not 'scan.xml' in os.listdir('.') or args.rerun_scan:
-        scan = f'nmap -Pn -sS -T{args.scan_speed} -p- -O -A --script vuln -oN scan.nmap -oX scan.xml {args.hosts} -vv'
+        scan = f'nmap -Pn -sS -T{args.scan_speed} -p- -O -A -oN scan.nmap -oX scan.xml {args.hosts} -vv'
         print(f'Starting scan: {scan}')
         subprocess.run(scan.split())
         print(f'Scan complete. Time: {elapsed()}')
@@ -121,10 +123,14 @@ def main():
     base_urlArr = []
     [base_urlArr.extend(x.base_urls) for x in hosts]
 
+    if os.path.exists('tmpdir'):
+        for file in os.listdir('tmpdir'):
+            os.remove(f'tmpdir/{file}')
+
     # Detect extensions
-    os.mkdir('tmpdir')
+    os.makedirs('tmpdir', exist_ok=True)
     for index, url in enumerate(base_urlArr):
-        scan = f'ffuf -w /usr/share/seclists/Discovery/Web-Content/web-extensions.txt:FUZZ -u {url}/indexFUZZ -of json -o tmpdir/{index}.json'
+        scan = f'ffuf -w /usr/share/seclists/Discovery/Web-Content/web-extensions.txt:FUZZ -u {url}/indexFUZZ -of json -o tmpdir/{index}.json {args.ffuf_args}'
         print(f'Starting extension scan: {scan}')
         subprocess.run(scan.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     extension_results = []
@@ -151,7 +157,7 @@ def main():
         if host.extensions != []:
             for j,url in enumerate(host.base_urls):
                 for k,extension in enumerate(host.extensions):
-                    scan = f'ffuf -w {args.wordlist} -u {url}/FUZZ -recursion -recursion-depth 1 -e {extension} -of json -o tmpdir/{i}{j}{k}.json'
+                    scan = f'ffuf -w {args.wordlist} -u {url}/FUZZ -recursion -recursion-depth 1 -e {extension} -of json -o tmpdir/{i}{j}{k}.json {args.ffuf_args}'
                     print(f'Fuzzing: {scan}')
                     subprocess.run(scan.split())
                     print(f'Fuzz complete. Time: {elapsed()}')
